@@ -7,6 +7,7 @@ use anyhow::anyhow;
 use regex::Regex;
 use semver::Version;
 use std::{
+    collections::BTreeMap,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -117,56 +118,62 @@ impl RVersions {
             return Err(anyhow!("No versions available"));
         }
 
+        // Parse the target version
         let target = Version::parse(target_version)
             .map_err(|_| anyhow!("Invalid version format: {}", target_version))?;
 
-        // Sort the versions once
-        let mut sorted_versions: Vec<&RVersion> = self.versions.iter().collect();
-        sorted_versions.sort_by(|a, b| a.version.cmp(&b.version));
+        // Group versions by their major version in a BTreeMap
+        let mut ver_map: BTreeMap<u64, Vec<&RVersion>> = BTreeMap::new();
+        for ver in &self.versions {
+            ver_map.entry(ver.version.major).or_default().push(ver);
+        }
 
-        // Track the best matches during a single pass
-        let mut exact_match = None;
-        let mut closest_within_minor = None;
-        let mut highest_within_minor = None;
-        let mut next_higher_minor = None;
-        let mut largest_version = None;
+        // Ensure all version groups are sorted
+        for versions in ver_map.values_mut() {
+            versions.sort_by(|a, b| a.version.cmp(&b.version));
+        }
 
-        for r_version in &sorted_versions {
-            // Update largest version (always keep track of the latest seen)
-            largest_version = Some(*r_version);
-
-            if r_version.version == target {
-                exact_match = Some(*r_version);
-                break; // Exact match, no need to continue
-            }
-
-            if r_version.version.major == target.major && r_version.version.minor == target.minor {
-                // Closest within the same minor version
-                if &r_version.version >= &target {
-                    closest_within_minor = Some(*r_version);
+        if let Some(versions) = ver_map.get(&target.major) {
+            // Iterate over the versions for the target major version
+            for version in versions.iter().rev() {
+                // Return immediately if an exact match is found (including pre-releases)
+                if version.version == target {
+                    return Ok(*version);
                 }
-                // Track the highest version within the minor version
-                highest_within_minor = Some(*r_version);
-            } else if r_version.version.major == target.major
-                && r_version.version.minor > target.minor
-            {
-                // Track the next higher minor version
-                next_higher_minor = next_higher_minor.or(Some(*r_version));
+
+                // if they're all a match except the pre-release return it
+                if version.version.major == target.major
+                    && version.version.minor == target.minor
+                    && version.version.patch == target.patch
+                {
+                    return Ok(*version);
+                }
+                // Otherwise, find the closest non-pre-release version
+                if version.version <= target && version.version.pre.is_empty() {
+                    return Ok(*version);
+                }
             }
+            let fallback = versions.get(versions.len()).cloned().unwrap_or(versions[0]);
+            return Ok(fallback);
         }
 
-        // Return the best match based on priority
-        if let Some(exact) = exact_match {
-            Ok(exact)
-        } else if let Some(closest) = closest_within_minor {
-            Ok(closest)
-        } else if let Some(highest) = highest_within_minor {
-            Ok(highest)
-        } else if let Some(next_minor) = next_higher_minor {
-            Ok(next_minor)
-        } else {
-            largest_version.ok_or_else(|| anyhow!("No versions available"))
+        // If no match in the same major version, look for the next higher major version
+        if let Some((_, versions)) = ver_map.range(target.major + 1..).next() {
+            return versions
+                .iter()
+                .find(|v| v.version.pre.is_empty())
+                .copied()
+                .ok_or_else(|| anyhow!("No suitable version found in higher major versions"));
         }
+
+        // Fall back to the largest version across all groups
+        ver_map
+            .values()
+            .flat_map(|v| v.iter())
+            .rev()
+            .find(|v| v.version.pre.is_empty())
+            .copied()
+            .ok_or_else(|| anyhow!("No suitable version found"))
     }
 }
 
@@ -186,7 +193,7 @@ mod tests {
 
     #[test]
     fn test_rver_matche_edge_cases() {
-        let r_versions = RVersions {
+        let mut r_versions = RVersions {
             default: None,
             versions: vec![
                 RVersion {
@@ -208,24 +215,60 @@ mod tests {
             ],
         };
 
-        // find highest within the same patch
         assert_eq!(
             r_versions.find_closest("4.4.0").unwrap().version,
-            Version::parse("4.4.1").unwrap()
+            Version::parse("4.3.3").unwrap()
         );
-        // find the lowest version within the same minor version
+
+        // find the lowest available if possible w/in minor
         assert_eq!(
             r_versions.find_closest("4.4.9").unwrap().version,
             Version::parse("4.4.1").unwrap()
         );
-        // find the lowest version within the same minor version
+
+        // find lowest available w/in minor
         assert_eq!(
             r_versions.find_closest("4.3.9").unwrap().version,
             Version::parse("4.3.3").unwrap()
         );
-        // find the lowest next major version
+
+        // find highest available (non-devel) from nearest major
         assert_eq!(
             r_versions.find_closest("5.0.0").unwrap().version,
+            Version::parse("4.4.1").unwrap()
+        );
+
+        // go up a major if needed
+        assert_eq!(
+            r_versions.find_closest("3.5.0").unwrap().version,
+            Version::parse("4.1.3").unwrap()
+        );
+
+        // find within same major going up
+        let mut new363 = r_versions.versions[0].clone();
+        new363.version = Version::parse("3.6.3").unwrap();
+        r_versions.versions.push(new363);
+
+        assert_eq!(
+            r_versions.find_closest("3.5.0").unwrap().version,
+            Version::parse("3.6.3").unwrap()
+        );
+
+        // going up a major versions
+        assert_eq!(
+            r_versions.find_closest("2.5.0").unwrap().version,
+            Version::parse("3.6.3").unwrap()
+        );
+
+        // pre-release exact match
+        assert_eq!(
+            r_versions.find_closest("4.5.0-devel").unwrap().version,
+            Version::parse("4.5.0-devel").unwrap()
+        );
+
+        // pre-release partial match
+        assert_eq!(
+            r_versions.find_closest("4.5.0").unwrap().version,
             Version::parse("4.5.0-devel").unwrap()
         );
     }

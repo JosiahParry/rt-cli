@@ -8,10 +8,7 @@ use crate::{RVersion, RVersions};
 
 impl RenvLock {
     /// Find the closest installed R version
-    pub fn nearest_installed_r_ver<'a>(
-        &self,
-        versions: &'a RVersions,
-    ) -> anyhow::Result<&'a RVersion> {
+    pub fn find_closest_r_ver<'a>(&self, versions: &'a RVersions) -> anyhow::Result<&'a RVersion> {
         versions.find_closest(&self.r.version)
     }
 }
@@ -98,6 +95,29 @@ mod tests {
 
         // Clean up the temporary file
         std::fs::remove_file(&temp_file_path)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn match_renv_versions() -> anyhow::Result<()> {
+        let mut lock = RenvLock::read("../tests/renv.lock")?;
+
+        let versions = dbg!(RVersions::discover()?);
+        let matched = lock.find_closest_r_ver(&versions)?;
+        assert_eq!("4.4.1", matched.version.to_string());
+
+        lock.r.version = "4.5.0".to_string();
+        let matched = lock.find_closest_r_ver(&versions)?;
+        assert_eq!("4.5.0-devel", matched.version.to_string());
+
+        lock.r.version = "5.5.0".to_string();
+        let matched = lock.find_closest_r_ver(&versions)?;
+        assert_eq!("4.5.0-devel", matched.version.to_string());
+
+        lock.r.version = "3.5.0".to_string();
+        let matched = lock.find_closest_r_ver(&versions)?;
+        assert_eq!("4.0.1", matched.version.to_string());
 
         Ok(())
     }
