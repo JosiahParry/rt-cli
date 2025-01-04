@@ -128,6 +128,20 @@ impl RVersions {
             ver_map.entry(ver.version.major).or_default().push(ver);
         }
 
+        // If the target major version is larger than the biggest key
+        if let Some(biggest_key) = ver_map.keys().max() {
+            if target.major > *biggest_key {
+                if let Some(versions) = ver_map.get(biggest_key) {
+                    // Return the largest version regardless of pre-release
+                    return versions
+                        .iter()
+                        .max_by(|a, b| a.version.cmp(&b.version))
+                        .copied()
+                        .ok_or_else(|| anyhow!("No versions found in the largest group"));
+                }
+            }
+        }
+
         // Ensure all version groups are sorted
         for versions in ver_map.values_mut() {
             versions.sort_by(|a, b| a.version.cmp(&b.version));

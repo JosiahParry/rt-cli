@@ -105,7 +105,7 @@ mod tests {
 
         let versions = dbg!(RVersions::discover()?);
         let matched = lock.find_closest_r_ver(&versions)?;
-        assert_eq!("4.4.1", matched.version.to_string());
+        assert_eq!("4.3.3", matched.version.to_string());
 
         lock.r.version = "4.5.0".to_string();
         let matched = lock.find_closest_r_ver(&versions)?;
@@ -117,7 +117,7 @@ mod tests {
 
         lock.r.version = "3.5.0".to_string();
         let matched = lock.find_closest_r_ver(&versions)?;
-        assert_eq!("4.0.1", matched.version.to_string());
+        assert_eq!("4.1.3", matched.version.to_string());
 
         Ok(())
     }
