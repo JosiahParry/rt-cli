@@ -4,6 +4,18 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
+use crate::{RVersion, RVersions};
+
+impl RenvLock {
+    /// Find the closest installed R version
+    pub fn nearest_installed_r_ver<'a>(
+        &self,
+        versions: &'a RVersions,
+    ) -> anyhow::Result<&'a RVersion> {
+        versions.find_closest(&self.r.version)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct RenvLock {
