@@ -1,7 +1,5 @@
-use crate::{RVersion, RVersions};
+use crate::{read_r_ver, RVersion, RVersions};
 use std::{fs::read_dir, path::PathBuf, sync::LazyLock};
-
-use super::read_r_ver;
 
 const DEFAULT_R_ROOT: &str = r#"C:\Program Files\R"#;
 static USER_HOME_DIR: LazyLock<Option<PathBuf>> = LazyLock::new(|| dirs::home_dir());

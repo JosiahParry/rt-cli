@@ -1,7 +1,6 @@
-use crate::discover::{RVersion, RVersions};
+use crate::{read_r_ver, RVersion, RVersions};
 use anyhow::anyhow;
 
-use super::read_r_ver;
 // https://github.com/r-lib/rig/blob/140115c9b565167670cfc6f303e6c968c563db98/src/macos.rs#L29
 pub const R_ROOT: &str = "/Library/Frameworks/R.framework/Versions";
 
