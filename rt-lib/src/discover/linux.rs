@@ -1,8 +1,6 @@
-use crate::discover::{RVersion, RVersions};
+use crate::{read_r_ver, RVersion, RVersions};
 use anyhow::anyhow;
 use std::path::{Path, PathBuf};
-
-use super::read_r_ver;
 
 const STANDALONE_R_ROOTS: [&str; 6] = [
     "/usr/lib/R",
